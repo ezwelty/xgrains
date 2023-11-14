@@ -35,9 +35,9 @@ from functions import process_xrf_scans, process_xrf_scans_multiple
 
 process_xrf_scans(
   # XRF scans to process
-  scans=Path('../data').glob('072122-101-2b_10um_10ms_coarse1_*.txt'),
+  scans=Path('data').glob('basename_*.txt'),
   # Output directory
-  output='results-single-2',
+  output='results-single',
   # Stardist probability threshold
   prob_thresh=0.3,
   # Delimiter used in the XRF scans
@@ -48,9 +48,9 @@ process_xrf_scans(
 
 process_xrf_scans_multiple(
   # XRF scans to process
-  scans=Path('../data').glob('072122-101-2b_10um_10ms_coarse1_*.txt'),
+  scans=Path('../data').glob('basename_*.txt'),
   # Output directory
-  output='results-multiple-2',
+  output='results-multiple',
   # Stardist probability thresholds
   prob_thresh=[0.3],
   # Delimiter used in the XRF scans
