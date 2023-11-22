@@ -15,6 +15,7 @@
 * Create and activate the `xgrains` Python environment:
 
   ```sh
+  conda config --set channel_priority strict
   conda env create --file environment.yaml
   conda activate xgrains
   ```
