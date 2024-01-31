@@ -2,7 +2,7 @@ import csv
 import datetime
 from pathlib import Path
 import re
-from typing import Any, Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Union
 import json
 
 import geopandas as gpd
@@ -338,12 +338,107 @@ def process_xrf_scan(
   )
 
 
+def process_overlaps(
+  path: Union[str, Path],
+  elements: Dict[str, List[str]] = {
+    'Fe': ['S', 'Cr', 'Ca', 'Ti'],
+    'K': ['Al']
+  }
+) -> None:
+  """
+  Measure grain overlaps and write them to a file (overlaps.csv).
+
+  Parameters
+  ----------
+  path
+    Directory containing element label files ({element}-labels.tif) and
+    a grains table (grains.csv).
+  elements
+    Dictionary mapping base elements to a list of overlapping elements.
+
+  Returns
+  -------
+  Creates a file overlaps.csv in the `path` with the following columns:
+  * base_element: Base element name ('Fe')
+  * base_label: Label of base element grain (1)
+  * overlap_element: Overlapping element name ('S')
+  * base_area_fraction_with_overlap: Fraction of base element grain area that is
+    covered by the overlapping element (0.5)
+  * overlap_grain_count: Number of overlapping element grains (1)
+  * overlap_label: Label of overlapping element grain, if unique (1), otherwise
+    null.
+  """
+  path = Path(path)
+  # Find label file for each element
+  label_paths = sorted(path.glob('*-labels.tif'))
+  pattern = re.compile(r'^.+_(?P<element>[A-Z][a-z]?)-labels$')
+  element_labels = {}
+  for label_path in label_paths:
+    match = pattern.match(label_path.stem)
+    if not match:
+      raise ValueError(f'Invalid label filename: {label_path}')
+    element = match.group('element')
+    if element in element_labels:
+      raise ValueError(f'Multiple label files for element {element}')
+    element_labels[element] = label_path
+  # Read grains table
+  grain_path = path / 'grains.csv'
+  if not grain_path.exists():
+    raise FileNotFoundError('grains.csv not found')
+  df = pd.read_csv(grain_path)
+  # Iterate over element pairs
+  pairs = set()
+  results = []
+  for a, bs in elements.items():
+    # Read base element
+    if a not in element_labels:
+      continue
+    a_labels = tifffile.imread(element_labels[a])
+    a_regions = skimage.measure.regionprops(a_labels)
+    mask = df['element'].eq(a)
+    if not mask.any():
+      raise ValueError(f'Element {a} not found in grains.csv')
+    for b in bs:
+      # Read overlapping element
+      if b not in element_labels:
+        continue
+      pair = frozenset([a, b])
+      if pair in pairs:
+        continue
+      print(f'Computing overlap: {a} vs {b}')
+      pairs.add(pair)
+      b_labels = tifffile.imread(element_labels[b])
+      # Measure overlap
+      for a_region in a_regions:
+        values = b_labels[tuple(a_region.coords.T)]
+        unique_values = np.unique(values[values > 0])
+        if len(unique_values) == 0:
+          continue
+        result = {
+          'base_element': a,
+          'base_label': a_region.label,
+          'overlap_element': b,
+          'base_area_fraction_with_overlap': (values > 0).sum() / len(values),
+          'overlap_grain_count': len(unique_values),
+          'overlap_label': unique_values[0] if len(unique_values) == 1 else None
+        }
+        results.append(result)
+  if results:
+    # Write results to file
+    df = pd.DataFrame(results).convert_dtypes()
+    df.to_csv(path / 'overlaps.csv', index=False)
+
+
 def process_xrf_scans(
   scans: Iterable[Union[str, Path]],
   output: Union[str, Path],
   model_name: str = '2D_versatile_fluo',
   prob_thresh: float = 0.3,
   nms_thresh: float = 0.3,
+  element_overlaps: Optional[Dict[str, List[str]]] = {
+    'Fe': ['S', 'Cr', 'Ca', 'Ti'],
+    'K': ['Al']
+  },
   sep: str = ';'
 ) -> None:
   """
@@ -411,40 +506,12 @@ def process_xrf_scans(
 
   if not dfs:
     return
-  df = pd.concat(dfs, ignore_index=True)
+  pd.concat(dfs, ignore_index=True).to_csv(output / 'grains.csv', index=False)
 
-  # ---- Fe overlaps ----
+  # ---- Grain overlaps ----
 
-  # Load Fe results
-  fe_path = output / f"{info['scan']}_Fe-labels.tif"
-  if fe_path.exists():
-    fe = tifffile.imread(fe_path)
-    regions = skimage.measure.regionprops(fe)
-    mask = df['element'].eq('Fe')
-
-    # Overlap with other elements
-    for element in ('S', 'Cr'):
-      label_path = output / f"{info['scan']}_{element}-labels.tif"
-      if not label_path.exists():
-        continue
-      labels = tifffile.imread(label_path)
-      # Measure overlap
-      results = []
-      for region in regions:
-        values = labels[tuple(region.coords.T)]
-        result = {
-          f'{element}_overlap_total_area_fraction': (
-            (values > 0).sum() / len(values)
-          ),
-          f'{element}_overlap_grain_count': len(np.unique(values[values > 0]))
-        }
-        results.append(result)
-      # Append to table
-      new_columns = pd.DataFrame(results, index=df.index[mask])
-      df = pd.concat((df, new_columns), axis=1)
-
-  # Write table
-  df.to_csv(output / 'grains.csv', index=False)
+  if element_overlaps:
+    process_overlaps(output, elements=element_overlaps)
 
 
 def process_xrf_scans_multiple(

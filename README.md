@@ -42,7 +42,12 @@ process_xrf_scans(
   # Stardist probability threshold
   prob_thresh=0.3,
   # Delimiter used in the XRF scans
-  sep=';'
+  sep=';',
+  # Element overlaps (base: [overlap])
+  element_overlaps={
+    'Fe': ['S', 'Cr', 'Ca', 'Ti'],
+    'K': ['Al']
+  },
 )
 
 # ---- Process XRF scans with multiple parameter combinations ----
@@ -55,6 +60,23 @@ process_xrf_scans_multiple(
   # Stardist probability thresholds
   prob_thresh=[0.3],
   # Delimiter used in the XRF scans
-  sep=';'
+  sep=';',
+  # ... other parameters (see process_xrf_scans)
+)
+```
+
+Grain overlaps (`overlaps.csv`) can always be recomputed from the results by running `process_overlaps` separately:
+
+```py
+from functions import process_overlaps
+
+process_overlaps(
+  # Results directory
+  path='results-single',
+  # Elements (base: [overlap])
+  elements={
+    'Fe': ['S', 'Cr', 'Ca', 'Ti'],
+    'K': ['Al']
+  }
 )
 ```
